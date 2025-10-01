@@ -1,0 +1,10 @@
+# Python 3.13 Compatible Requirements
+streamlit>=1.50.0
+googlemaps>=4.10.0
+requests>=2.31.0
+pandas>=2.2.0
+numpy>=1.26.0
+python-dotenv>=1.0.0
+openai>=1.0.0
+# Removed aiohttp and asyncio-throttle due to Python 3.13 compatibility issues
+# The app will work without these dependencies

@@ -1,8 +1,5 @@
 # Replace these lines in streamlit_app.py:
 
-# Instead of:
-# HARDCODED_GOOGLE_API_KEY = "AIzaSyBvOkBwJcDdEfGhIjKlMnOpQrStUvWxYzA"
-# HARDCODED_OPENAI_API_KEY = "sk-proj-abcdefghijklmnopqrstuvwxyz1234567890"
 
 # Use:
 import os
