@@ -173,6 +173,7 @@ class BusinessSearcher:
             # Geocode the location
             geocode_result = self.gmaps.geocode(location)
             if not geocode_result:
+                st.error(f"Could not find location: {location}")
                 return []
             
             lat = geocode_result[0]['geometry']['location']['lat']
@@ -224,6 +225,7 @@ class BusinessSearcher:
                 'types': result.get('types', [])
             }
         except Exception as e:
+            st.error(f"Error getting place details: {str(e)}")
             return {}
 
 class ScriptGenerator:
@@ -524,9 +526,14 @@ def search_businesses_sync(google_api_key: str, location: str, business_type: st
             radius=radius
         )
         
+        if not businesses:
+            return []
+        
         # Enrich with detailed information including phone numbers
         enriched_businesses = []
-        for business in businesses:
+        for i, business in enumerate(businesses):
+            st.write(f"Getting details for business {i+1}/{len(businesses)}: {business.get('name', 'Unknown')}")
+            
             if business.get('place_id'):
                 details = searcher.get_place_details(business['place_id'])
                 # Update business with detailed info
@@ -577,6 +584,18 @@ def main():
     4. **Call**: Use the generated scripts to make personalized cold calls
     5. **Download**: Export all contacts to CSV for your CRM
     """)
+    
+    # API Status Check
+    st.markdown("### 🔧 API Status")
+    if GOOGLE_API_KEY:
+        st.success("✅ Google Maps API: Configured")
+    else:
+        st.error("❌ Google Maps API: Missing - Add GOOGLE_MAPS_API_KEY to your environment")
+    
+    if OPENAI_API_KEY:
+        st.success("✅ OpenAI API: Configured")
+    else:
+        st.warning("⚠️ OpenAI API: Missing - Add OPENAI_API_KEY to your environment")
     
     # Service selection for script generation
     st.markdown("### 🎯 What Do You Do? (Optional - for AI script generation)")
