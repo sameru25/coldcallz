@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Cold Calling Assistant - Streamlit App
+Cold Calling Assistant - Standalone Streamlit App
 A comprehensive tool for finding business contacts and generating cold calling scripts
 """
 
@@ -9,7 +9,6 @@ import pandas as pd
 import json
 import time
 import hashlib
-import asyncio
 from datetime import datetime, timedelta
 from typing import List, Dict, Optional
 import os
@@ -17,21 +16,61 @@ import sys
 import io
 import base64
 from dotenv import load_dotenv
+import googlemaps
+import requests
+import openai
 
 # Load environment variables
 load_dotenv()
 
-# Import the existing business search functionality
-sys.path.append('./coldcall_maps')
-from business_search import BusinessSearcher
-from csv_exporter import CSVExporter
-from config import Config
-
-# OpenAI for script generation
-import openai
-
 # Demo data for testing
-from demo_data import DEMO_BUSINESSES, get_demo_script
+DEMO_BUSINESSES = [
+    {
+        "name": "Demo Restaurant",
+        "address": "123 Main St, New York, NY 10001",
+        "phone": "+1-555-0123",
+        "website": "https://demo-restaurant.com",
+        "website_live": True,
+        "rating": 4.5,
+        "total_ratings": 120,
+        "place_id": "demo_1",
+        "google_url": "https://maps.google.com/?cid=demo1"
+    },
+    {
+        "name": "Sample Marketing Agency",
+        "address": "456 Business Ave, New York, NY 10002",
+        "phone": "+1-555-0456",
+        "website": "https://sample-agency.com",
+        "website_live": True,
+        "rating": 4.2,
+        "total_ratings": 85,
+        "place_id": "demo_2",
+        "google_url": "https://maps.google.com/?cid=demo2"
+    },
+    {
+        "name": "Local Coffee Shop",
+        "address": "789 Coffee St, New York, NY 10003",
+        "phone": "+1-555-0789",
+        "website": "https://local-coffee.com",
+        "website_live": False,
+        "rating": 4.8,
+        "total_ratings": 200,
+        "place_id": "demo_3",
+        "google_url": "https://maps.google.com/?cid=demo3"
+    }
+]
+
+def get_demo_script(user_service: str, search_query: str, business_name: str) -> str:
+    """Generate a demo script for testing"""
+    return f"""Hi, this is [Your Name] calling from [Your Company]. 
+
+I noticed {business_name} is a {search_query} business, and I specialize in {user_service}. 
+
+Many {search_query} businesses like yours struggle with [specific pain point]. We've helped similar businesses increase their [specific benefit] by [percentage]%.
+
+[PAUSE for response]
+
+Would you be interested in a quick 5-minute conversation about how we could help {business_name} achieve similar results?"""
 
 # API KEYS FROM ENVIRONMENT VARIABLES
 GOOGLE_API_KEY = os.getenv('GOOGLE_MAPS_API_KEY')
@@ -109,6 +148,83 @@ class RateLimiter:
         
         # Flag if user gets more than threshold contacts in a day (potential bot)
         return user_contacts > RateLimiter.BOT_DETECTION_THRESHOLD
+
+class BusinessSearcher:
+    """Standalone business searcher using Google Places API"""
+    
+    def __init__(self, api_key: str):
+        """Initialize the business searcher"""
+        self.api_key = api_key
+        self.gmaps = googlemaps.Client(key=api_key)
+    
+    def search_businesses(self, location: str, business_type: str, radius: int = 3000) -> List[Dict]:
+        """
+        Search for businesses using Google Places API
+        
+        Args:
+            location: Location to search (e.g., "New York, NY")
+            business_type: Type of business to search for (e.g., "restaurant", "SEO agency", "plumber")
+            radius: Search radius in meters (default 3000m = 3km)
+        
+        Returns:
+            List of business dictionaries with basic info
+        """
+        try:
+            # Geocode the location
+            geocode_result = self.gmaps.geocode(location)
+            if not geocode_result:
+                return []
+            
+            lat = geocode_result[0]['geometry']['location']['lat']
+            lng = geocode_result[0]['geometry']['location']['lng']
+            
+            # Search for places
+            places_result = self.gmaps.places_nearby(
+                location=(lat, lng),
+                radius=radius,
+                type='establishment',
+                keyword=business_type
+            )
+            
+            businesses = []
+            for place in places_result.get('results', []):
+                business = {
+                    'name': place.get('name', 'Unknown'),
+                    'place_id': place.get('place_id', ''),
+                    'address': place.get('vicinity', ''),
+                    'rating': place.get('rating', 0),
+                    'total_ratings': place.get('user_ratings_total', 0),
+                    'types': place.get('types', []),
+                    'google_url': f"https://maps.google.com/?cid={place.get('place_id', '')}"
+                }
+                businesses.append(business)
+            
+            return businesses
+            
+        except Exception as e:
+            st.error(f"Error searching businesses: {str(e)}")
+            return []
+    
+    def get_place_details(self, place_id: str) -> Dict:
+        """Get detailed information about a specific place"""
+        try:
+            place_details = self.gmaps.place(
+                place_id=place_id,
+                fields=['name', 'formatted_address', 'formatted_phone_number', 'website', 'rating', 'user_ratings_total', 'types']
+            )
+            
+            result = place_details.get('result', {})
+            return {
+                'name': result.get('name', ''),
+                'address': result.get('formatted_address', ''),
+                'phone': result.get('formatted_phone_number', ''),
+                'website': result.get('website', ''),
+                'rating': result.get('rating', 0),
+                'total_ratings': result.get('user_ratings_total', 0),
+                'types': result.get('types', [])
+            }
+        except Exception as e:
+            return {}
 
 class ScriptGenerator:
     """Generate cold calling scripts using OpenAI GPT-4o mini"""
@@ -398,34 +514,40 @@ def create_download_link(df: pd.DataFrame, filename: str) -> str:
     href = f'<a href="data:file/csv;base64,{b64}" download="{filename}">📥 Download CSV</a>'
     return href
 
-async def search_businesses_async(google_api_key: str, location: str, business_type: str, radius: int = 3000):
-    """Async wrapper for business search"""
+def search_businesses_sync(google_api_key: str, location: str, business_type: str, radius: int = 3000):
+    """Synchronous wrapper for business search"""
     try:
-        # Temporarily set the API key in config
-        original_key = Config.GOOGLE_MAPS_API_KEY
-        Config.GOOGLE_MAPS_API_KEY = google_api_key
+        searcher = BusinessSearcher(api_key=google_api_key)
+        businesses = searcher.search_businesses(
+            location=location,
+            business_type=business_type,
+            radius=radius
+        )
         
-        async with BusinessSearcher(api_key=google_api_key) as searcher:
-            # Search for businesses
-            businesses = searcher.search_businesses(
-                location=location,
-                business_type=business_type,
-                radius=radius
-            )
-            
-            if not businesses:
-                return []
-            
-            # Enrich with detailed information
-            enriched_businesses = await searcher.enrich_businesses_with_details(businesses)
-            return enriched_businesses
+        # Enrich with detailed information
+        enriched_businesses = []
+        for business in businesses:
+            if business.get('place_id'):
+                details = searcher.get_place_details(business['place_id'])
+                business.update(details)
+                
+                # Check if website is live
+                if business.get('website'):
+                    try:
+                        response = requests.head(business['website'], timeout=5)
+                        business['website_live'] = response.status_code == 200
+                    except:
+                        business['website_live'] = False
+                else:
+                    business['website_live'] = False
+                
+                enriched_businesses.append(business)
+        
+        return enriched_businesses
             
     except Exception as e:
         st.error(f"Error searching businesses: {str(e)}")
         return []
-    finally:
-        # Restore original key
-        Config.GOOGLE_MAPS_API_KEY = original_key
 
 def main():
     """Main application function"""
@@ -576,13 +698,13 @@ def main():
                 businesses = DEMO_BUSINESSES.copy()
                 st.info("🎭 Demo mode: Showing sample data. Add API keys to .env file for real searches.")
             else:
-                # Run async search
-                businesses = asyncio.run(search_businesses_async(
+                # Run synchronous search
+                businesses = search_businesses_sync(
                     google_api_key=GOOGLE_API_KEY,
                     location=location,
                     business_type=business_type,
                     radius=radius * 1000  # Convert km to meters
-                ))
+                )
         
         if businesses:
             # Check if this would exceed contact limit
