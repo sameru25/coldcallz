@@ -211,7 +211,7 @@ class BusinessSearcher:
         try:
             place_details = self.gmaps.place(
                 place_id=place_id,
-                fields=['name', 'formatted_address', 'formatted_phone_number', 'website', 'rating', 'user_ratings_total', 'types']
+                fields=['name', 'formatted_address', 'formatted_phone_number', 'website', 'rating', 'user_ratings_total']
             )
             
             result = place_details.get('result', {})
@@ -221,8 +221,7 @@ class BusinessSearcher:
                 'phone': result.get('formatted_phone_number', ''),
                 'website': result.get('website', ''),
                 'rating': result.get('rating', 0),
-                'total_ratings': result.get('user_ratings_total', 0),
-                'types': result.get('types', [])
+                'total_ratings': result.get('user_ratings_total', 0)
             }
         except Exception as e:
             st.error(f"Error getting place details: {str(e)}")
