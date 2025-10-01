@@ -515,7 +515,7 @@ def create_download_link(df: pd.DataFrame, filename: str) -> str:
     return href
 
 def search_businesses_sync(google_api_key: str, location: str, business_type: str, radius: int = 3000):
-    """Synchronous wrapper for business search"""
+    """Synchronous wrapper for business search with phone number enrichment"""
     try:
         searcher = BusinessSearcher(api_key=google_api_key)
         businesses = searcher.search_businesses(
@@ -524,11 +524,12 @@ def search_businesses_sync(google_api_key: str, location: str, business_type: st
             radius=radius
         )
         
-        # Enrich with detailed information
+        # Enrich with detailed information including phone numbers
         enriched_businesses = []
         for business in businesses:
             if business.get('place_id'):
                 details = searcher.get_place_details(business['place_id'])
+                # Update business with detailed info
                 business.update(details)
                 
                 # Check if website is live
@@ -698,7 +699,7 @@ def main():
                 businesses = DEMO_BUSINESSES.copy()
                 st.info("🎭 Demo mode: Showing sample data. Add API keys to .env file for real searches.")
             else:
-                # Run synchronous search
+                # Run synchronous search with phone number enrichment
                 businesses = search_businesses_sync(
                     google_api_key=GOOGLE_API_KEY,
                     location=location,
